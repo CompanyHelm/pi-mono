@@ -222,6 +222,35 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
 
+	it("triggers pre-prompt threshold compaction when the incoming prompt would overflow reserve", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-1", contextWindow: 200_000 }],
+			settings: { compaction: { enabled: true, reserveTokens: 10_000 } },
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const lastAssistant = createAssistant(harness, {
+			stopReason: "stop",
+			totalTokens: 185_000,
+			timestamp: Date.now(),
+		});
+		harness.session.agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "previous prompt" }], timestamp: Date.now() - 1000 },
+			lastAssistant,
+		];
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue();
+		harness.setResponses([
+			() => {
+				expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		await harness.session.prompt("x".repeat(40_000));
+
+		expect(runAutoCompactionSpy).toHaveBeenCalled();
+	});
+
 	it("triggers threshold compaction for error messages using the last successful usage", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

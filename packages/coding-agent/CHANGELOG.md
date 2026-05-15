@@ -6,6 +6,10 @@
 
 - Changed `read` tool rendering to collapse Pi documentation, AGENTS/CLAUDE context files, and `SKILL.md` contents by default in interactive output.
 
+### Fixed
+
+- Fixed auto-compaction to include the incoming prompt in the preflight threshold check before sending the next provider request.
+
 ## [0.72.1] - 2026-05-02
 
 ## [0.72.0] - 2026-05-01

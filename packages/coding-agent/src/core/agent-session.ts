@@ -42,6 +42,7 @@ import {
 	collectEntriesForBranchSummary,
 	compact,
 	estimateContextTokens,
+	estimateTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -1094,6 +1095,8 @@ export class AgentSession {
 				// Ensure we're using the base prompt (in case previous turn had modifications)
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
 			}
+
+			await this._checkPrePromptCompaction(messages);
 		} catch (error) {
 			preflightResult?.(false);
 			throw error;
@@ -1843,6 +1846,37 @@ export class AgentSession {
 		} else {
 			contextTokens = calculateContextTokens(assistantMessage.usage);
 		}
+		if (shouldCompact(contextTokens, contextWindow, settings)) {
+			await this._runAutoCompaction("threshold", false);
+		}
+	}
+
+	/**
+	 * Check whether the current context plus the incoming prompt crosses the
+	 * compaction threshold before sending the next provider request.
+	 */
+	private async _checkPrePromptCompaction(incomingMessages: AgentMessage[]): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
+
+		const contextWindow = this.model?.contextWindow ?? 0;
+		if (contextWindow <= 0) return;
+
+		const messages = [...this.agent.state.messages, ...incomingMessages];
+		const estimate = estimateContextTokens(messages);
+		let contextTokens = estimate.tokens;
+
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+		if (compactionEntry !== null && estimate.lastUsageIndex !== null) {
+			const usageMessage = messages[estimate.lastUsageIndex];
+			const usageIsFromBeforeCompaction =
+				usageMessage.role === "assistant" &&
+				(usageMessage as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime();
+			if (usageIsFromBeforeCompaction) {
+				contextTokens = messages.reduce((tokens, message) => tokens + estimateTokens(message), 0);
+			}
+		}
+
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			await this._runAutoCompaction("threshold", false);
 		}
