@@ -8,7 +8,7 @@
 
 ### Fixed
 
-- Fixed auto-compaction to include the incoming prompt in the preflight threshold check before sending the next provider request.
+- Fixed threshold compaction to run before the next provider request for both oversized incoming prompts and long tool loops, using the normal compaction settings instead of waiting for the full run to end.
 
 ## [0.72.1] - 2026-05-02
 
