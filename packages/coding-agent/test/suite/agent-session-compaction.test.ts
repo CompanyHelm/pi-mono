@@ -1,6 +1,8 @@
-import { type AssistantMessage, fauxAssistantMessage, type Model } from "@mariozechner/pi-ai";
+import type { AgentTool } from "@mariozechner/pi-agent-core";
+import { type AssistantMessage, fauxAssistantMessage, fauxToolCall, type Model } from "@mariozechner/pi-ai";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHarness, type Harness } from "./harness.js";
+import { createHarness, getAssistantTexts, type Harness } from "./harness.js";
 
 type SessionWithCompactionInternals = {
 	_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
@@ -222,6 +224,35 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
 
+	it("triggers pre-prompt threshold compaction when the incoming prompt would overflow reserve", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-1", contextWindow: 200_000 }],
+			settings: { compaction: { enabled: true, reserveTokens: 10_000 } },
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const lastAssistant = createAssistant(harness, {
+			stopReason: "stop",
+			totalTokens: 185_000,
+			timestamp: Date.now(),
+		});
+		harness.session.agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "previous prompt" }], timestamp: Date.now() - 1000 },
+			lastAssistant,
+		];
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue();
+		harness.setResponses([
+			() => {
+				expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		await harness.session.prompt("x".repeat(40_000));
+
+		expect(runAutoCompactionSpy).toHaveBeenCalled();
+	});
+
 	it("triggers threshold compaction for error messages using the last successful usage", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
@@ -339,5 +370,50 @@ describe("AgentSession compaction characterization", () => {
 
 		expect(belowThresholdSpy).not.toHaveBeenCalled();
 		expect(disabledSpy).not.toHaveBeenCalled();
+	});
+
+	it("continues after threshold compaction when a tool batch pushes context past the threshold mid-turn", async () => {
+		vi.useFakeTimers();
+		const largeTool: AgentTool = {
+			name: "emit_large_output",
+			label: "emit_large_output",
+			description: "Emit a large tool result",
+			parameters: Type.Object({}),
+			execute: async () => ({
+				content: [{ type: "text", text: "x".repeat(12_000) }],
+				details: {},
+			}),
+		};
+		const harness = await createHarness({
+			tools: [largeTool],
+			models: [{ id: "faux-midturn", contextWindow: 3_000 }],
+			settings: { compaction: { enabled: true, reserveTokens: 1_000, keepRecentTokens: 1 } },
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_before_compact", async (event) => ({
+						compaction: {
+							summary: "mid-turn compaction",
+							firstKeptEntryId: event.preparation.firstKeptEntryId,
+							tokensBefore: event.preparation.tokensBefore,
+							details: {},
+						},
+					}));
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("emit_large_output", {}), { stopReason: "toolUse" }),
+			fauxAssistantMessage("done after compaction"),
+		]);
+
+		await harness.session.prompt("trigger mid-turn compaction");
+		await vi.advanceTimersByTimeAsync(100);
+		await harness.session.agent.waitForIdle();
+
+		expect(getAssistantTexts(harness)).toContain("done after compaction");
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(1);
+		expect(harness.getPendingResponseCount()).toBe(0);
 	});
 });

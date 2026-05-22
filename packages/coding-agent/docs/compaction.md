@@ -34,6 +34,12 @@ contextTokens > contextWindow - reserveTokens
 
 By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
 
+Pi checks that threshold in three places:
+
+1. **Before the next LLM call in a tool loop** — after tool results are appended, Pi estimates the upcoming context and can compact before continuing the same run.
+2. **At turn end** — after the agent completes a run.
+3. **Before the next user prompt** — catches aborted/error cases where no follow-up provider call happened.
+
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
 ### How It Works

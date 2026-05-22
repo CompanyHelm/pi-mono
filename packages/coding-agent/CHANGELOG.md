@@ -6,6 +6,10 @@
 
 - Changed `read` tool rendering to collapse Pi documentation, AGENTS/CLAUDE context files, and `SKILL.md` contents by default in interactive output.
 
+### Fixed
+
+- Fixed threshold compaction to run before the next provider request for both oversized incoming prompts and long tool loops, using the normal compaction settings instead of waiting for the full run to end.
+
 ## [0.72.1] - 2026-05-02
 
 ## [0.72.0] - 2026-05-01

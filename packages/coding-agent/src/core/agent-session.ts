@@ -21,6 +21,7 @@ import type {
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	ShouldStopAfterTurnContext,
 	ThinkingLevel,
 } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@mariozechner/pi-ai";
@@ -42,6 +43,7 @@ import {
 	collectEntriesForBranchSummary,
 	compact,
 	estimateContextTokens,
+	estimateTokens,
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
@@ -263,6 +265,7 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	private _continueAfterThresholdCompaction = false;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -323,6 +326,15 @@ export class AgentSession {
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		const previousShouldStopAfterTurn = this.agent.shouldStopAfterTurn;
+		this.agent.shouldStopAfterTurn = async (context) => {
+			if (this._shouldStopForMidTurnCompaction(context)) {
+				this._continueAfterThresholdCompaction = true;
+				return true;
+			}
+
+			return (await previousShouldStopAfterTurn?.(context)) ?? false;
+		};
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -612,6 +624,21 @@ export class AgentSession {
 			}
 		}
 		return undefined;
+	}
+
+	private _shouldStopForMidTurnCompaction(context: ShouldStopAfterTurnContext): boolean {
+		if (context.toolResults.length === 0 || !this.model) {
+			return false;
+		}
+
+		const settings = this.settingsManager.getCompactionSettings();
+		const contextWindow = this.model.contextWindow ?? 0;
+		if (!settings.enabled || contextWindow <= 0) {
+			return false;
+		}
+
+		const estimate = estimateContextTokens(context.context.messages);
+		return shouldCompact(estimate.tokens, contextWindow, settings);
 	}
 
 	private _replaceMessageInPlace(target: AgentMessage, replacement: AgentMessage): void {
@@ -1094,6 +1121,8 @@ export class AgentSession {
 				// Ensure we're using the base prompt (in case previous turn had modifications)
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
 			}
+
+			await this._checkPrePromptCompaction(messages);
 		} catch (error) {
 			preflightResult?.(false);
 			throw error;
@@ -1820,6 +1849,15 @@ export class AgentSession {
 			return;
 		}
 
+		if (this._continueAfterThresholdCompaction) {
+			this._continueAfterThresholdCompaction = false;
+			const estimatedContextTokens = estimateContextTokens(this.agent.state.messages).tokens;
+			if (shouldCompact(estimatedContextTokens, contextWindow, settings)) {
+				await this._runAutoCompaction("threshold", false, true);
+				return;
+			}
+		}
+
 		// Case 2: Threshold - context is getting large
 		// For error messages (no usage data), estimate from last successful response.
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
@@ -1849,9 +1887,44 @@ export class AgentSession {
 	}
 
 	/**
+	 * Check whether the current context plus the incoming prompt crosses the
+	 * compaction threshold before sending the next provider request.
+	 */
+	private async _checkPrePromptCompaction(incomingMessages: AgentMessage[]): Promise<void> {
+		const settings = this.settingsManager.getCompactionSettings();
+		if (!settings.enabled) return;
+
+		const contextWindow = this.model?.contextWindow ?? 0;
+		if (contextWindow <= 0) return;
+
+		const messages = [...this.agent.state.messages, ...incomingMessages];
+		const estimate = estimateContextTokens(messages);
+		let contextTokens = estimate.tokens;
+
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+		if (compactionEntry !== null && estimate.lastUsageIndex !== null) {
+			const usageMessage = messages[estimate.lastUsageIndex];
+			const usageIsFromBeforeCompaction =
+				usageMessage.role === "assistant" &&
+				(usageMessage as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime();
+			if (usageIsFromBeforeCompaction) {
+				contextTokens = messages.reduce((tokens, message) => tokens + estimateTokens(message), 0);
+			}
+		}
+
+		if (shouldCompact(contextTokens, contextWindow, settings)) {
+			await this._runAutoCompaction("threshold", false);
+		}
+	}
+
+	/**
 	 * Internal: Run auto-compaction with events.
 	 */
-	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<void> {
+	private async _runAutoCompaction(
+		reason: "overflow" | "threshold",
+		willRetry: boolean,
+		continueAfterCompaction = false,
+	): Promise<void> {
 		const settings = this.settingsManager.getCompactionSettings();
 
 		this._emit({ type: "compaction_start", reason });
@@ -2000,7 +2073,7 @@ export class AgentSession {
 				setTimeout(() => {
 					this.agent.continue().catch(() => {});
 				}, 100);
-			} else if (this.agent.hasQueuedMessages()) {
+			} else if (continueAfterCompaction || this.agent.hasQueuedMessages()) {
 				// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 				// Kick the loop so queued messages are actually delivered.
 				setTimeout(() => {
