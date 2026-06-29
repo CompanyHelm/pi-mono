@@ -1,0 +1,185 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": [
+		"scripts/*.{js,mjs,ts}",
+		"*.{js,mjs,ts}",
+		".pi/extensions/*.{ts,tsx,js,mjs}",
+		"packages/*/src/index.ts",
+		"packages/ai/src/cli.ts",
+		"packages/ai/src/providers/{anthropic,azure-openai-responses,google,google-vertex,mistral,openai-codex-responses,openai-completions,openai-responses}.ts",
+		"packages/ai/src/{oauth,bedrock-provider}.ts",
+		"packages/coding-agent/src/cli.ts",
+		"packages/coding-agent/src/bun/*.ts",
+		"packages/coding-agent/src/core/hooks/index.ts",
+		"packages/coding-agent/examples/**/*.{ts,tsx}",
+		"packages/*/test/**/*.test.ts",
+		"packages/coding-agent/test/suite/**/*.test.ts",
+		"packages/web-ui/example/src/**/*.{ts,tsx}",
+		"packages/*/test/**/*.ts"
+	],
+	"project": [
+		"scripts/**/*.{js,mjs,ts}",
+		".pi/extensions/**/*.{ts,tsx,js,mjs}",
+		"packages/**/*.{ts,tsx,js,mjs}",
+		"!packages/**/dist/**",
+		"!packages/**/coverage/**",
+		"!packages/ai/src/models.generated.ts",
+		"!packages/web-ui/example/dist/**"
+	],
+	"ignore": [
+		"packages/ai/src/models.generated.ts",
+		"packages/coding-agent/src/modes/interactive/theme/*.json",
+		"packages/coding-agent/src/modes/interactive/assets/*.png",
+		"packages/coding-agent/src/core/export-html/vendor/*.js"
+	],
+	"ignoreBinaries": [
+		"clip",
+		"gh",
+		"pbcopy",
+		"taskkill",
+		"tmux",
+		"trash",
+		"which",
+		"wl-copy",
+		"where",
+		"xclip",
+		"xsel",
+		"termux-clipboard-set"
+	],
+	"ignoreDependencies": [
+		"@types/node",
+		"concurrently",
+		"husky",
+		"shx"
+	],
+	"ignoreUnresolved": [
+		"@mariozechner/pi-agent-core",
+		"@mariozechner/pi-ai",
+		"@mariozechner/pi-tui",
+		"@smithy/node-http-handler",
+		"@smithy/types",
+		"esbuild",
+		"highlight.js"
+	],
+	"workspaces": {
+		".": {
+			"entry": [
+				"scripts/*.{js,mjs,ts}",
+				"*.{js,mjs,ts}",
+				".pi/extensions/*.{ts,tsx,js,mjs}"
+			],
+			"project": [
+				"scripts/**/*.{js,mjs,ts}",
+				".pi/extensions/**/*.{ts,tsx,js,mjs}"
+			]
+		},
+		"packages/agent": {
+			"entry": [
+				"src/index.ts",
+				"test/**/*.test.ts",
+				"test/**/*.ts"
+			],
+			"project": [
+				"src/**/*.ts",
+				"test/**/*.ts"
+			]
+		},
+		"packages/ai": {
+			"entry": [
+				"src/index.ts",
+				"src/cli.ts",
+				"src/providers/{anthropic,azure-openai-responses,google,google-vertex,mistral,openai-codex-responses,openai-completions,openai-responses}.ts",
+				"src/{oauth,bedrock-provider}.ts",
+				"scripts/*.ts",
+				"test/**/*.test.ts",
+				"test/**/*.ts"
+			],
+			"project": [
+				"src/**/*.ts",
+				"scripts/**/*.ts",
+				"test/**/*.ts",
+				"!src/models.generated.ts"
+			]
+		},
+		"packages/coding-agent": {
+			"entry": [
+				"src/index.ts",
+				"src/cli.ts",
+				"src/bun/*.ts",
+				"src/core/hooks/index.ts",
+				"test/**/*.test.ts",
+				"test/suite/**/*.test.ts",
+				"examples/**/*.{ts,tsx}",
+				"test/**/*.ts"
+			],
+			"project": [
+				"src/**/*.ts",
+				"src/**/*.tsx",
+				"test/**/*.ts",
+				"examples/**/*.{ts,tsx}"
+			]
+		},
+		"packages/tui": {
+			"entry": [
+				"src/index.ts",
+				"test/**/*.test.ts",
+				"test/**/*.ts"
+			],
+			"project": [
+				"src/**/*.ts",
+				"test/**/*.ts"
+			]
+		},
+		"packages/web-ui": {
+			"entry": [
+				"src/index.ts"
+			],
+			"project": [
+				"src/**/*.ts",
+				"src/**/*.tsx",
+				"scripts/**/*.ts"
+			]
+		},
+		"packages/web-ui/example": {
+			"entry": [
+				"src/**/*.{ts,tsx}"
+			],
+			"project": [
+				"src/**/*.{ts,tsx}"
+			]
+		},
+		"packages/coding-agent/examples/extensions/with-deps": {
+			"entry": [
+				"index.ts"
+			],
+			"project": [
+				"*.ts"
+			]
+		},
+		"packages/coding-agent/examples/extensions/custom-provider-anthropic": {
+			"entry": [
+				"index.ts"
+			],
+			"project": [
+				"*.ts"
+			]
+		},
+		"packages/coding-agent/examples/extensions/custom-provider-gitlab-duo": {
+			"entry": [
+				"index.ts",
+				"test.ts"
+			],
+			"project": [
+				"*.ts"
+			]
+		},
+		"packages/coding-agent/examples/extensions/sandbox": {
+			"entry": [
+				"index.ts"
+			],
+			"project": [
+				"*.ts"
+			]
+		}
+	}
+}
